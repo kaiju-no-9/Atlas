@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -49,7 +50,15 @@ func runBraveSearch(ctx context.Context, key, query string, limit int) ([]search
 			} `json:"results"`
 		} `json:"web"`
 	}
-	decoder := json.NewDecoder(io.LimitReader(response.Body, (2<<20)+1))
+	const maxProviderResponseBytes = 2 << 20
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxProviderResponseBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxProviderResponseBytes {
+		return nil, fmt.Errorf("search provider response exceeds size limit")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
 	if err := decoder.Decode(&payload); err != nil {
 		return nil, err
 	}
