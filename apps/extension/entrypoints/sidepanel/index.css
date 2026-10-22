@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #17212b; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+button, input, select, textarea { font: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+
+@layer components {
+  .button { @apply inline-flex min-h-9 items-center justify-center rounded-lg px-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50; }
+  .button-primary { @apply bg-accent text-white hover:bg-blue-700; }
+  .button-secondary { @apply border border-line bg-white text-ink hover:bg-gray-50; }
+  .button-danger { @apply border border-red-200 bg-white text-red-700 hover:bg-red-50; }
+  .nav-button { @apply rounded-md px-3 py-1.5 text-xs font-medium text-muted transition-colors hover:text-ink; }
+  .nav-button-active { @apply bg-white text-ink shadow-sm; }
+  .composer { @apply block w-full resize-none rounded-xl border border-line bg-canvas px-3 py-2.5 text-sm leading-5 text-ink placeholder:text-gray-400 focus:border-accent focus:outline-none; }
+  .field-label { @apply mb-1.5 block text-sm font-medium text-ink; }
+  .field { @apply w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm text-ink placeholder:text-gray-400 focus:border-accent focus:outline-none; }
+  .eyebrow { @apply text-[10px] font-semibold uppercase tracking-[0.12em] text-muted; }
+  .status { @apply rounded-full px-2.5 py-1 text-[11px] font-medium; }
+  .status-draft { @apply bg-gray-100 text-gray-600; }
+  .status-running { @apply bg-blue-50 text-blue-700; }
+  .status-paused { @apply bg-amber-50 text-amber-700; }
+  .status-completed { @apply bg-emerald-50 text-emerald-700; }
+  .status-failed { @apply bg-red-50 text-red-700; }
+  .status-cancelled { @apply bg-gray-100 text-gray-600; }
+}
