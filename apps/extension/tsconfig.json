@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["chrome"],
+    "allowImportingTsExtensions": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@contracts/*": ["../../packages/contracts/src/*"]
+    },
+    "noEmit": true
+  },
+  "include": ["entrypoints/**/*.ts", "entrypoints/**/*.tsx", "src/**/*.ts", "src/**/*.tsx", ".wxt/types/**/*.d.ts"]
+}
