@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { RuntimeMessageSchema } from "../../../packages/contracts/src/messages.ts";
+import { ContentActionResponseSchema, ContentActionSchema, RuntimeMessageSchema } from "../../../packages/contracts/src/messages.ts";
 
 test("accepts a message from the supported runtime protocol", () => {
   assert.equal(RuntimeMessageSchema.safeParse({ type: "GET_ACTIVE_TAB" }).success, true);
@@ -22,4 +22,18 @@ test("bounds saved API keys and requires a non-empty model identifier", () => {
   assert.equal(RuntimeMessageSchema.safeParse(base).success, true);
   assert.equal(RuntimeMessageSchema.safeParse({ ...base, settings: { ...base.settings, model: " " } }).success, false);
   assert.equal(RuntimeMessageSchema.safeParse({ ...base, settings: { ...base.settings, apiKey: "x".repeat(501) } }).success, false);
+});
+
+test("content actions accept only the defined isolated-world operations", () => {
+  assert.equal(ContentActionSchema.safeParse({ type: "PING" }).success, true);
+  assert.equal(ContentActionSchema.safeParse({ type: "OBSERVE_DOM" }).success, true);
+  assert.equal(ContentActionSchema.safeParse({ type: "PING", payload: { run: "something" } }).success, false);
+  assert.equal(ContentActionSchema.safeParse({ type: "EXECUTE_TOOL" }).success, false);
+  assert.equal(ContentActionSchema.safeParse({ type: "EXECUTE_TOOL", payload: {} }).success, false);
+});
+
+test("content action responses are discriminated and reject extra fields", () => {
+  assert.equal(ContentActionResponseSchema.safeParse({ success: true, payload: { ready: true } }).success, true);
+  assert.equal(ContentActionResponseSchema.safeParse({ success: false, error: "unsupported" }).success, true);
+  assert.equal(ContentActionResponseSchema.safeParse({ success: true, payload: {}, secret: "leak" }).success, false);
 });

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ToolCallEnvelopeSchema } from "./tools.ts";
 
 export const RuntimeMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("GET_ACTIVE_TAB") }),
@@ -43,3 +44,16 @@ export const UiTaskSchema = z.object({
   updatedAt: z.string().datetime(),
 });
 export type UiTask = z.infer<typeof UiTaskSchema>;
+
+export const ContentActionSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("PING") }).strict(),
+  z.object({ type: z.literal("OBSERVE_DOM") }).strict(),
+  z.object({ type: z.literal("EXECUTE_TOOL"), payload: ToolCallEnvelopeSchema }).strict(),
+]);
+export type ContentAction = z.infer<typeof ContentActionSchema>;
+
+export const ContentActionResponseSchema = z.discriminatedUnion("success", [
+  z.object({ success: z.literal(true), payload: z.record(z.unknown()) }).strict(),
+  z.object({ success: z.literal(false), error: z.string().min(1) }).strict(),
+]);
+export type ContentActionResponse = z.infer<typeof ContentActionResponseSchema>;
