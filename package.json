@@ -7,7 +7,8 @@
     "build": "pnpm --filter @atlas/contracts typecheck && pnpm --filter @atlas/extension build",
     "typecheck": "pnpm --filter @atlas/contracts typecheck && pnpm --filter @atlas/extension typecheck",
     "test": "pnpm --filter @atlas/extension test",
-    "lint": "pnpm --filter @atlas/extension lint"
+    "lint": "pnpm --filter @atlas/extension lint",
+    "eval": "node evals/run-fixtures.mjs --check"
   },
   "devDependencies": {
     "typescript": "^5.4.5"
