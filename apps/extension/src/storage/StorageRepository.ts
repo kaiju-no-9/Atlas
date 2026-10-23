@@ -50,30 +50,35 @@ export class StorageRepository {
 
   async saveSettings(input: Omit<SettingsRecord, "schemaVersion" | "updatedAt"> & { clearKey: boolean }): Promise<SettingsRecord> {
     await this.initialize();
-    const current = await this.getSettings();
-    const record = SettingsSchema.parse({
-      ...input,
-      apiKey: input.clearKey ? "" : input.apiKey || current.apiKey,
-      schemaVersion: 1,
-      updatedAt: new Date().toISOString(),
+    return this.writes.run(SETTINGS_KEY, async () => {
+      const current = await this.getSettings();
+      const record = SettingsSchema.parse({
+        ...input,
+        apiKey: input.clearKey ? "" : input.apiKey || current.apiKey,
+        schemaVersion: 1,
+        updatedAt: new Date().toISOString(),
+      });
+      const area = record.rememberKey ? chrome.storage.local : chrome.storage.session;
+      const otherArea = record.rememberKey ? chrome.storage.session : chrome.storage.local;
+
+      // Remove the key from its old location first. If the new write fails,
+      // losing a key is safer than leaving it persisted against user intent.
+      await otherArea.remove(SETTINGS_KEY);
+      await area.set({ [SETTINGS_KEY]: record });
+      return record;
     });
-    const area = record.rememberKey ? chrome.storage.local : chrome.storage.session;
-    const otherArea = record.rememberKey ? chrome.storage.session : chrome.storage.local;
-    await Promise.all([
-      area.set({ [SETTINGS_KEY]: record }),
-      otherArea.remove(SETTINGS_KEY),
-    ]);
-    return record;
   }
 
   async clearApiKey(): Promise<void> {
     await this.initialize();
-    await Promise.all([
-      chrome.storage.local.get(SETTINGS_KEY).then(async ({ [SETTINGS_KEY]: raw }) => {
-        if (raw) await chrome.storage.local.set({ [SETTINGS_KEY]: { ...raw, apiKey: "", rememberKey: false } });
-      }),
-      chrome.storage.session.remove(SETTINGS_KEY),
-    ]);
+    await this.writes.run(SETTINGS_KEY, async () => {
+      const { [SETTINGS_KEY]: raw } = await chrome.storage.local.get(SETTINGS_KEY);
+      await chrome.storage.local.remove(SETTINGS_KEY);
+      await chrome.storage.session.remove(SETTINGS_KEY);
+      if (raw) {
+        await chrome.storage.local.set({ [SETTINGS_KEY]: { ...raw, apiKey: "", rememberKey: false } });
+      }
+    });
   }
 
   async createTask(goal: string): Promise<ChatRecord> {

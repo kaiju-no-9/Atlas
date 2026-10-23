@@ -66,6 +66,51 @@ test("persists opted-in settings and clears an existing key", async () => {
   assert.equal(session.values.get("atlas_settings").apiKey, "");
 });
 
+test("serializes settings updates and removes persistent keys before switching to session storage", async () => {
+  const { repository, local, session } = createRepository();
+  await repository.saveSettings({
+    provider: "openai", model: "gpt-4o-mini", rememberKey: true,
+    apiKey: "sk-persistent-secret", clearKey: false,
+  });
+
+  const sessionSet = session.set.bind(session);
+  session.set = async (items) => {
+    assert.equal(local.values.has("atlas_settings"), false);
+    await sessionSet(items);
+  };
+  const [first, second] = await Promise.all([
+    repository.saveSettings({
+      provider: "anthropic", model: "claude-sonnet", rememberKey: false,
+      apiKey: "", clearKey: false,
+    }),
+    repository.saveSettings({
+      provider: "openrouter", model: "openai/gpt-4o-mini", rememberKey: false,
+      apiKey: "", clearKey: false,
+    }),
+  ]);
+
+  assert.equal(first.provider, "anthropic");
+  assert.equal(second.provider, "openrouter");
+  assert.equal(local.values.has("atlas_settings"), false);
+  assert.equal(session.values.get("atlas_settings").provider, "openrouter");
+  assert.equal(session.values.get("atlas_settings").apiKey, "sk-persistent-secret");
+});
+
+test("clearing a persistent key removes the secret before writing sanitized settings", async () => {
+  const { repository, local } = createRepository();
+  await repository.saveSettings({
+    provider: "openai", model: "gpt-4o-mini", rememberKey: true,
+    apiKey: "sk-persistent-secret", clearKey: false,
+  });
+
+  const originalSet = local.set.bind(local);
+  local.set = async () => { throw new Error("storage unavailable"); };
+  await assert.rejects(repository.clearApiKey(), /storage unavailable/);
+  assert.equal(local.values.has("atlas_settings"), false);
+
+  local.set = originalSet;
+});
+
 test("stores tasks partitioned by chat ID and records status changes", async () => {
   const { repository, local } = createRepository();
   const created = await repository.createTask("Summarize the current page");
@@ -79,6 +124,29 @@ test("stores tasks partitioned by chat ID and records status changes", async () 
   assert.equal(running.task.status, "running");
   assert.equal(paused.task.status, "paused");
   assert.deepEqual(paused.events.slice(-2).map((event) => event.text), ["Task running.", "Task paused."]);
+});
+
+test("recovers saved settings and task records after repository recreation", async () => {
+  const { repository, local, session } = createRepository();
+  const created = await repository.createTask("Persist across worker restarts");
+  await repository.updateTaskStatus(created.chatId, "running");
+  await repository.saveSettings({
+    provider: "openai", model: "gpt-4o-mini", rememberKey: false,
+    apiKey: "sk-session-secret", clearKey: false,
+  });
+
+  // A new repository instance models a restarted MV3 service worker while
+  // Chrome's storage areas remain available to the new worker.
+  globalThis.chrome = { storage: { local, session } };
+  const restartedRepository = new StorageRepository();
+  const [recoveredSettings, recoveredChats] = await Promise.all([
+    restartedRepository.getSettings(),
+    restartedRepository.getRecentChats(),
+  ]);
+
+  assert.equal(recoveredSettings.apiKey, "sk-session-secret");
+  assert.equal(recoveredChats[0].chatId, created.chatId);
+  assert.equal(recoveredChats[0].task.status, "running");
 });
 
 test("refuses to open storage written by a newer schema version", async () => {
