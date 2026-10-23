@@ -126,6 +126,29 @@ test("stores tasks partitioned by chat ID and records status changes", async () 
   assert.deepEqual(paused.events.slice(-2).map((event) => event.text), ["Task running.", "Task paused."]);
 });
 
+test("recovers saved settings and task records after repository recreation", async () => {
+  const { repository, local, session } = createRepository();
+  const created = await repository.createTask("Persist across worker restarts");
+  await repository.updateTaskStatus(created.chatId, "running");
+  await repository.saveSettings({
+    provider: "openai", model: "gpt-4o-mini", rememberKey: false,
+    apiKey: "sk-session-secret", clearKey: false,
+  });
+
+  // A new repository instance models a restarted MV3 service worker while
+  // Chrome's storage areas remain available to the new worker.
+  globalThis.chrome = { storage: { local, session } };
+  const restartedRepository = new StorageRepository();
+  const [recoveredSettings, recoveredChats] = await Promise.all([
+    restartedRepository.getSettings(),
+    restartedRepository.getRecentChats(),
+  ]);
+
+  assert.equal(recoveredSettings.apiKey, "sk-session-secret");
+  assert.equal(recoveredChats[0].chatId, created.chatId);
+  assert.equal(recoveredChats[0].task.status, "running");
+});
+
 test("refuses to open storage written by a newer schema version", async () => {
   const { repository, local } = createRepository();
   local.values.set("atlas_schema_version", 2);
