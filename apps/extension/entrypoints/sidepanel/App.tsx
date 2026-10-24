@@ -7,23 +7,28 @@ import { TaskControls } from "./components/TaskControls";
 import { TaskTimeline } from "./components/TaskTimeline";
 import { useUiStore } from "./store/useUiStore";
 import { sendMessage } from "../../src/protocol/client";
+import { TaskSpecSchema } from "../../src/agent/types";
+import { TaskSnapshotSchema } from "../../src/agent/states";
 
 const ChatListSchema = z.array(z.object({
   task: UiTaskSchema,
 }));
+const AgentTaskSchema = z.object({ snapshot: TaskSnapshotSchema, spec: TaskSpecSchema });
 
 export default function App() {
   const { view, activeTab, task, loading, error, setView, setActiveTab, setTask, setLoading, setError } = useUiStore();
   const [busy, setBusy] = useState(false);
+  const [agentTask, setAgentTask] = useState<z.infer<typeof AgentTaskSchema> | null>(null);
   const refreshVersion = useRef(0);
 
   const refresh = useCallback(async () => {
     const version = ++refreshVersion.current;
     setLoading(true);
     try {
-      const [tabResult, tasksResult] = await Promise.all([
+      const [tabResult, tasksResult, agentResult] = await Promise.all([
         sendMessage({ type: "GET_ACTIVE_TAB" }),
         sendMessage({ type: "GET_TASKS" }),
+        sendMessage({ type: "GET_AGENT_TASK" }),
       ]);
       const tab = ActiveTabSummarySchema.safeParse(tabResult);
       if (version !== refreshVersion.current) return;
@@ -31,6 +36,8 @@ export default function App() {
       const chats = ChatListSchema.safeParse(tasksResult);
       if (!chats.success) throw new Error("Stored tasks could not be read.");
       setTask(chats.data[0]?.task ?? null);
+      const parsedAgent = AgentTaskSchema.safeParse(agentResult);
+      setAgentTask(parsedAgent.success ? parsedAgent.data : null);
       setError(null);
     } catch (cause) {
       if (version === refreshVersion.current) {
@@ -44,7 +51,7 @@ export default function App() {
   useEffect(() => {
     void refresh();
     const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-      if (area === "local" && Object.keys(changes).some((key) => key.startsWith("atlas_chat_"))) void refresh();
+      if (area === "local" && Object.keys(changes).some((key) => key.startsWith("atlas_chat_") || key.startsWith("atlas_agent_task_"))) void refresh();
     };
     const onTabActivated = () => void refresh();
     const onTabUpdated = (_tabId: number, changeInfo: chrome.tabs.TabChangeInfo, tab: chrome.tabs.Tab) => {
@@ -103,7 +110,7 @@ export default function App() {
 
       {view === "settings" ? <SettingsView onBack={() => setView("chat")} /> : <>
         {error && <div className="mx-4 mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">{error}</div>}
-        {loading ? <div className="flex flex-1 items-center justify-center text-sm text-muted" role="status">Loading current page…</div> : <TaskTimeline task={task} activeTab={activeTab} />}
+        {loading ? <div className="flex flex-1 items-center justify-center text-sm text-muted" role="status">Loading current page…</div> : <TaskTimeline task={task} activeTab={activeTab} agentTask={agentTask} onApproveAction={(approvalToken, approved) => void sendMessage({ type: "APPROVE_AGENT_ACTION", approvalToken, approved }).then(refresh).catch((cause) => setError(cause instanceof Error ? cause.message : "Approval could not be applied."))} onClarification={(answer) => void sendMessage({ type: "PROVIDE_AGENT_CLARIFICATION", answer }).then(refresh).catch((cause) => setError(cause instanceof Error ? cause.message : "Clarification could not be applied."))} />}
         <TaskControls task={task} busy={busy} onControl={(action) => void controlTask(action)} />
         <ChatComposer busy={busy} onSubmit={startTask} />
       </>}

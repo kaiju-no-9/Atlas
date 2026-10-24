@@ -4,7 +4,14 @@ import { ToolCallEnvelopeSchema } from "./tools.ts";
 export const RuntimeMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("GET_ACTIVE_TAB") }),
   z.object({ type: z.literal("GET_SETTINGS") }),
+  z.object({
+    type: z.literal("TEST_PROVIDER_CONNECTION"),
+    provider: z.enum(["openrouter", "openai", "anthropic"]),
+    model: z.string().trim().min(1).max(200),
+    apiKey: z.string().max(500),
+  }),
   z.object({ type: z.literal("GET_TASKS") }),
+  z.object({ type: z.literal("GET_AGENT_TASK") }),
   z.object({
     type: z.literal("SAVE_SETTINGS"),
     settings: z.object({
@@ -17,6 +24,8 @@ export const RuntimeMessageSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("START_TASK"), goal: z.string().trim().min(1).max(2000) }),
   z.object({ type: z.literal("TASK_CONTROL"), action: z.enum(["run", "pause", "resume", "stop"]) }),
+  z.object({ type: z.literal("APPROVE_AGENT_ACTION"), approvalToken: z.string().uuid(), approved: z.boolean() }),
+  z.object({ type: z.literal("PROVIDE_AGENT_CLARIFICATION"), answer: z.string().trim().min(1).max(1000) }),
 ]);
 export type RuntimeMessage = z.infer<typeof RuntimeMessageSchema>;
 
@@ -47,7 +56,20 @@ export type UiTask = z.infer<typeof UiTaskSchema>;
 
 export const ContentActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("PING") }).strict(),
-  z.object({ type: z.literal("OBSERVE_DOM") }).strict(),
+  z.object({
+    type: z.literal("OBSERVE_DOM"),
+    taskId: z.string().uuid().optional(),
+    tabId: z.number().int().nonnegative().optional(),
+    mode: z.enum(["compact", "interactive", "full_limited"]).optional(),
+  }).strict(),
+  z.object({
+    type: z.literal("WAIT_FOR_STATE"),
+    condition: z.enum(["element_present", "element_gone", "url_changed", "dom_quiescent"]),
+    observationId: z.string().uuid().optional(),
+    elementId: z.string().regex(/^el_[1-9]\d*$/).optional(),
+    fromUrl: z.string().url().optional(),
+    timeoutMs: z.number().int().min(500).max(10000),
+  }).strict(),
   z.object({ type: z.literal("EXECUTE_TOOL"), payload: ToolCallEnvelopeSchema }).strict(),
 ]);
 export type ContentAction = z.infer<typeof ContentActionSchema>;
