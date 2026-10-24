@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Atlas Form Tool Fixture</title>
+    <style>body{font:16px sans-serif;max-width:40rem;margin:2rem auto}label{display:block;margin:.75rem 0}input,select,button{display:block;padding:.5rem;margin-top:.25rem}</style>
+  </head>
+  <body>
+    <main>
+      <h1>Profile form</h1>
+      <form id="profile-form">
+        <label>Display name <input id="display-name" name="displayName" type="text" autocomplete="name" placeholder="Your name"></label>
+        <label>Contact email <input id="contact-email" name="email" type="email" autocomplete="email"></label>
+        <label>Password <input id="account-password" name="password" type="password" autocomplete="current-password"></label>
+        <label>Plan <select id="plan"><option value="">Choose a plan</option><option value="basic">Basic</option><option value="pro">Pro</option></select></label>
+        <button id="disabled-action" type="button" disabled>Unavailable</button>
+        <button id="save-profile" type="submit">Save profile</button>
+      </form>
+      <p id="form-status" role="status" aria-live="polite">Not submitted</p>
+    </main>
+    <script>
+      document.querySelector("#profile-form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        document.querySelector("#form-status").textContent = "Fixture form submitted locally";
+      });
+    </script>
+  </body>
+</html>

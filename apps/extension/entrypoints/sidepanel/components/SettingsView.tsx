@@ -19,6 +19,7 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [connection, setConnection] = useState<{ status: "idle" | "testing" | "success" | "error"; text: string }>({ status: "idle", text: "" });
 
   useEffect(() => {
     let active = true;
@@ -65,9 +66,25 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
       });
       setSettings(SettingsResponseSchema.parse(result));
       setApiKey("");
+      setConnection({ status: "idle", text: "" });
       setNotice("Saved API key cleared.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Could not clear the key.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const testConnection = async () => {
+    setBusy(true);
+    setConnection({ status: "testing", text: "Checking OpenRouter…" });
+    try {
+      const raw = await sendMessage({ type: "TEST_PROVIDER_CONNECTION", provider: settings.provider, model: settings.model, apiKey: apiKey.trim() });
+      const result = z.object({ success: z.boolean(), latencyMs: z.number().nonnegative(), error: z.string().optional() }).parse(raw);
+      if (!result.success) throw new Error(result.error ?? "OpenRouter connection failed.");
+      setConnection({ status: "success", text: `OpenRouter connected in ${result.latencyMs} ms.` });
+    } catch (error) {
+      setConnection({ status: "error", text: error instanceof Error ? error.message : "OpenRouter connection failed." });
     } finally {
       setBusy(false);
     }
@@ -83,8 +100,8 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
           <label className="field-label" htmlFor="provider">Provider</label>
           <select id="provider" className="field" value={settings.provider} onChange={(event) => setSettings({ ...settings, provider: event.target.value as SettingsResponse["provider"] })}>
             <option value="openrouter">OpenRouter</option>
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Anthropic</option>
+            <option value="openai" disabled>OpenAI (coming later)</option>
+            <option value="anthropic" disabled>Anthropic (coming later)</option>
           </select>
         </div>
         <div>
@@ -115,10 +132,12 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
           <span><span className="block text-sm font-medium text-ink">Remember key on this device</span><span className="mt-1 block text-xs leading-5 text-muted">When off, Atlas keeps the key only for this browser session.</span></span>
         </label>
         <div className="flex gap-2">
+          <button className="button button-secondary" type="button" onClick={() => void testConnection()} disabled={busy || !loaded || (!settings.hasApiKey && !apiKey.trim())}>{connection.status === "testing" ? "Testing…" : "Test connection"}</button>
           <button className="button button-primary flex-1" type="submit" disabled={busy || !loaded}>{busy ? "Saving…" : "Save settings"}</button>
           <button className="button button-secondary" type="button" onClick={() => void clearKey()} disabled={busy || !loaded || !settings.hasApiKey}>Clear key</button>
         </div>
       </form>
+      {connection.text && <p className={`mt-4 rounded-lg px-3 py-2 text-sm ${connection.status === "success" ? "bg-green-50 text-green-800" : connection.status === "error" ? "bg-red-50 text-red-800" : "bg-blue-50 text-blue-800"}`} role="status">{connection.text}</p>}
       {notice && <p className="mt-4 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-800" role="status">{notice}</p>}
       <p className="mt-6 text-xs leading-5 text-muted">Keys stay in trusted extension storage and are never exposed to webpages or content scripts.</p>
     </section>

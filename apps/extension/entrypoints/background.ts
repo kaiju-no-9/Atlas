@@ -4,10 +4,22 @@ import { ScriptInjector } from "../src/browser/ScriptInjector";
 import { StorageRepository } from "../src/storage/StorageRepository";
 import { logger } from "../src/shared/logger";
 import { ensureRecoveryAlarm, RECOVERY_ALARM_NAME } from "../src/shared/recoveryAlarm";
+import { OpenRouterProvider } from "../src/agent/provider";
+import { AgentRuntime } from "../src/agent/AgentRuntime";
 
 export default defineBackground(() => {
   const storage = new StorageRepository();
-  const router = new MessageRouter(storage, new TabManager(), new ScriptInjector());
+  const provider = new OpenRouterProvider(
+    async () => {
+      const settings = await storage.getSettings();
+      if (settings.provider !== "openrouter") throw new Error("UNSUPPORTED_PROVIDER: Select OpenRouter to run tasks.");
+      return settings.apiKey || null;
+    },
+    async () => (await storage.getSettings()).model,
+  );
+  const injector = new ScriptInjector();
+  const agent = new AgentRuntime(storage, provider, injector);
+  const router = new MessageRouter(storage, new TabManager(), injector, (apiKey, model) => provider.testConnection(apiKey, model), agent);
 
   void storage.initialize().catch((error: unknown) => {
     logger.error("Storage initialization failed", { error: error instanceof Error ? error.message : "unknown" });

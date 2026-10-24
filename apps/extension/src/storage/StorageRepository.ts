@@ -54,7 +54,7 @@ export class StorageRepository {
       const current = await this.getSettings();
       const record = SettingsSchema.parse({
         ...input,
-        apiKey: input.clearKey ? "" : input.apiKey || current.apiKey,
+        apiKey: input.clearKey ? "" : input.apiKey.trim() || current.apiKey,
         schemaVersion: 1,
         updatedAt: new Date().toISOString(),
       });

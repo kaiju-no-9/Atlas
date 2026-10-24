@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Atlas Dynamic DOM Fixture</title>
+    <style>body{font:16px sans-serif;max-width:40rem;margin:2rem auto}button{padding:.5rem;margin:.5rem}</style>
+  </head>
+  <body>
+    <main>
+      <h1>Dynamic controls</h1>
+      <p>Observe the transient control and wait for its scheduled removal.</p>
+      <button id="scheduled-removal" type="button">Disappears after 500 ms</button>
+      <button id="changing-label" type="button" aria-label="Before mutation">Stable node, changing name</button>
+    </main>
+    <script>
+      setTimeout(() => document.querySelector("#scheduled-removal")?.remove(), 500);
+      setTimeout(() => document.querySelector("#changing-label")?.setAttribute("aria-label", "After mutation"), 500);
+    </script>
+  </body>
+</html>
