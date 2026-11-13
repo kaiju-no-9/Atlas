@@ -4,6 +4,7 @@ import { ToolEnvelopeSchema, type ToolEnvelope } from "../tools/protocol.ts";
 import { actionKey } from "../tools/pipeline.ts";
 import { parseToolArguments } from "../tools/registry.ts";
 import { PolicyEngine } from "../policy/engine.ts";
+import { APPROVAL_REQUEST_TTL_MS, APPROVAL_TOKEN_TTL_MS, approvalDigest, createApprovalNonce } from "../policy/approvalManager.ts";
 import type { TaskCompiler } from "./compiler.ts";
 import { TaskRepository } from "./TaskRepository.ts";
 import { assertTransition, TERMINAL_STATES, WAITING_STATES, type AgentState, type TaskSnapshot } from "./states.ts";
@@ -74,17 +75,56 @@ export class TaskController {
   async approveAction(taskId: string, token: string, approved: boolean): Promise<TaskSnapshot> {
     const snapshot = await this.requiredSnapshot(taskId);
     const approval = snapshot.pendingApproval;
-    if (snapshot.state !== "AwaitingActionApproval" || !approval || approval.approvalToken !== token || approval.expiresAt < Date.now()) {
+    if (snapshot.state !== "AwaitingActionApproval" || !approval || approval.approvalToken !== token) {
       throw new Error("The action approval is missing, expired, or belongs to another action.");
+    }
+    if (approval.expiresAt <= Date.now()) {
+      snapshot.pendingApproval = undefined;
+      snapshot.pendingToolEnvelope = undefined;
+      return this.transition(snapshot, "Cancelled");
     }
     if (!approved) {
       snapshot.pendingApproval = undefined;
       snapshot.pendingToolEnvelope = undefined;
-      return this.transition(snapshot, "Planning");
+      return this.transition(snapshot, "Cancelled");
     }
     approval.approved = true;
+    approval.tokenExpiresAt = Date.now() + APPROVAL_TOKEN_TTL_MS;
     await this.repo.saveTaskSnapshot(snapshot);
     return this.transition(snapshot, "Executing");
+  }
+
+  async editPendingAction(taskId: string, token: string, rawArguments: Record<string, unknown>): Promise<TaskSnapshot> {
+    const snapshot = await this.requiredSnapshot(taskId);
+    const approval = snapshot.pendingApproval;
+    const envelope = snapshot.pendingToolEnvelope;
+    if (snapshot.state !== "AwaitingActionApproval" || !approval || approval.approvalToken !== token || !envelope) {
+      throw new Error("The action approval is missing or belongs to another action.");
+    }
+    if (approval.expiresAt <= Date.now()) {
+      snapshot.pendingApproval = undefined;
+      snapshot.pendingToolEnvelope = undefined;
+      return this.transition(snapshot, "Cancelled");
+    }
+    const parsedAction = parseToolArguments(envelope.tool, rawArguments);
+    const revisedEnvelope = ToolEnvelopeSchema.parse({ ...envelope, callId: crypto.randomUUID(), arguments: parsedAction.args });
+    const spec = await this.repo.getTaskSpec(taskId);
+    const tab = await chrome.tabs.get(snapshot.activeTabId);
+    const observation = await this.observation(snapshot);
+    const targetId = typeof revisedEnvelope.arguments.elementId === "string" ? revisedEnvelope.arguments.elementId : undefined;
+    const target = targetId ? observation.elements.find((item) => item.id === targetId) : undefined;
+    if (targetId && !target) throw new Error("The edited target is not in the current page observation. Refresh the task before requesting approval.");
+    const risk = this.policy.classifyActionRisk(revisedEnvelope, tab.url ?? "", new Set(spec.allowedOrigins), target);
+    if (risk.blocked) throw new Error(`The edited action is blocked by policy: ${risk.consequence}`);
+    const tier = Math.max(2, risk.tier) as 2 | 3;
+    snapshot.pendingToolEnvelope = revisedEnvelope;
+    snapshot.pendingApproval = {
+      approvalToken: createApprovalNonce(), actionKey: actionKey(parsedAction.name, parsedAction.args),
+      payloadDigest: await approvalDigest({ taskId, envelope: revisedEnvelope, targetUrl: tab.url ?? "", observationFingerprint: observation.fingerprint }),
+      approved: false, actionSummary: `Review edited action: ${risk.summary}`, consequence: risk.consequence, tier,
+      expiresAt: Date.now() + APPROVAL_REQUEST_TTL_MS,
+    };
+    return this.repo.saveTaskSnapshot(snapshot);
   }
 
   async provideClarification(taskId: string, answer: string): Promise<TaskSnapshot> {
@@ -205,12 +245,19 @@ export class TaskController {
     const envelope = ToolEnvelopeSchema.parse(proposal.envelope);
     if (envelope.taskId !== snapshot.taskId || !spec.allowedTools.includes(envelope.tool as never)) return this.fail(snapshot, "TOOL_NOT_ALLOWED", "The proposed tool is outside the compiled task plan.");
     const tab = await chrome.tabs.get(snapshot.activeTabId);
-    const risk = this.policy.classifyActionRisk(envelope, tab.url ?? "", new Set(spec.allowedOrigins));
+    const targetId = typeof envelope.arguments.elementId === "string" ? envelope.arguments.elementId : undefined;
+    const target = targetId ? observation.elements.find((item) => item.id === targetId) : undefined;
+    const risk = this.policy.classifyActionRisk(envelope, tab.url ?? "", new Set(spec.allowedOrigins), target);
+    if (risk.blocked) return this.fail(snapshot, "ACTION_BLOCKED_BY_POLICY", `${risk.summary}: ${risk.consequence}`);
     snapshot.pendingToolEnvelope = envelope;
     if (risk.tier >= 2) {
       const parsedAction = parseToolArguments(envelope.tool, envelope.arguments);
-      snapshot.pendingApproval = { approvalToken: crypto.randomUUID(), actionKey: actionKey(parsedAction.name, parsedAction.args), approved: false,
-        actionSummary: risk.summary, consequence: risk.consequence, tier: risk.tier, expiresAt: Date.now() + 180000 };
+      snapshot.pendingApproval = {
+        approvalToken: createApprovalNonce(), actionKey: actionKey(parsedAction.name, parsedAction.args),
+        payloadDigest: await approvalDigest({ taskId: snapshot.taskId, envelope, targetUrl: observation.url, observationFingerprint: observation.fingerprint }),
+        approved: false, actionSummary: risk.summary, consequence: risk.consequence, tier: risk.tier,
+        expiresAt: Date.now() + APPROVAL_REQUEST_TTL_MS,
+      };
       return this.transition(snapshot, "AwaitingActionApproval");
     }
     return this.transition(snapshot, "Executing");
@@ -221,10 +268,20 @@ export class TaskController {
     if (!envelope || !snapshot.lastObservationId) return this.fail(snapshot, "MISSING_STEP_STATE", "The action or observation checkpoint is missing.");
     const tab = await chrome.tabs.get(snapshot.activeTabId);
     const observation = await this.observation(snapshot);
-    const approvedActions = snapshot.pendingApproval?.approved ? new Set([snapshot.pendingApproval.actionKey]) : new Set<string>();
+    let approvedActions = new Set<string>();
+    if (snapshot.pendingApproval) {
+      const approval = snapshot.pendingApproval;
+      if (!approval.approved || !approval.tokenExpiresAt || approval.tokenExpiresAt <= Date.now()) return this.fail(snapshot, "APPROVAL_EXPIRED", "The one-time approval expired before execution.");
+      const currentDigest = await approvalDigest({ taskId: snapshot.taskId, envelope, targetUrl: tab.url ?? "", observationFingerprint: observation.fingerprint });
+      if (!approval.payloadDigest || currentDigest !== approval.payloadDigest) return this.fail(snapshot, "APPROVAL_TARGET_CHANGED", "The approved action, target URL, or page snapshot changed. Review a new action before continuing.");
+      approvedActions = new Set([approval.actionKey]);
+      // Consume the persisted approval before dispatch, so a worker restart cannot replay it.
+      snapshot.pendingApproval = undefined;
+      snapshot = await this.repo.saveTaskSnapshot(snapshot);
+    }
     const result = await this.pipeline.execute(envelope, {
       taskId: snapshot.taskId, tabId: snapshot.activeTabId, currentUrl: tab.url ?? "", taskStatus: "running", cancelRequested: false,
-      allowedTools: new Set(spec.allowedTools), allowedOrigins: new Set(spec.allowedOrigins), activeObservationId: snapshot.lastObservationId,
+      allowedTools: new Set(spec.allowedTools), allowedOrigins: new Set(spec.allowedOrigins), activeObservationId: observation.observationId,
       activeObservation: observation, approvedActions,
     });
     await this.repo.saveToolResult(result);
@@ -232,6 +289,9 @@ export class TaskController {
     snapshot.budgetsUsed.steps += 1;
     snapshot.pendingApproval = undefined;
     if (result.status !== "success") {
+      if (approvedActions.size > 0 && result.status === "revalidation_failed") {
+        return this.fail(snapshot, "APPROVAL_INVALIDATED", "The approved page target changed before execution. The action was stopped; review a new request before continuing.");
+      }
       snapshot.error = { code: result.error?.code ?? result.status.toUpperCase(), message: result.error?.message ?? "Browser tool did not succeed." };
       return this.transition(snapshot, "Recovering");
     }

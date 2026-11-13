@@ -9,6 +9,7 @@ export interface AgentGateway {
   latest(): Promise<unknown>;
   control(action: "run" | "pause" | "resume" | "stop"): Promise<unknown>;
   approveAction(token: string, approved: boolean): Promise<unknown>;
+  editAction(token: string, args: Record<string, unknown>): Promise<unknown>;
   provideClarification(answer: string): Promise<unknown>;
   recover(): Promise<void>;
 }
@@ -77,6 +78,9 @@ export class MessageRouter {
       case "APPROVE_AGENT_ACTION":
         if (!this.agent) throw new Error("Agent execution is unavailable.");
         return this.agent.approveAction(message.approvalToken, message.approved);
+      case "EDIT_AGENT_ACTION":
+        if (!this.agent) throw new Error("Agent execution is unavailable.");
+        return this.agent.editAction(message.approvalToken, message.arguments);
       case "PROVIDE_AGENT_CLARIFICATION":
         if (!this.agent) throw new Error("Agent execution is unavailable.");
         return this.agent.provideClarification(message.answer);

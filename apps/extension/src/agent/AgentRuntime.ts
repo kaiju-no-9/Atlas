@@ -71,6 +71,7 @@ export class AgentRuntime implements AgentGateway {
     }
     snapshot = await this.controller.cancel(snapshot.taskId);
     await this.chats.updateTaskStatus(current.chatId, "cancelled");
+    await this.clearRecoveryAlarmWhenIdle();
     return { snapshot, spec: current.spec };
   }
 
@@ -78,7 +79,23 @@ export class AgentRuntime implements AgentGateway {
     const current = await this.latestWithTaskId();
     if (!current) throw new Error("There is no agent task to approve.");
     const snapshot = await this.controller.approveAction(current.snapshot.taskId, token, approved);
+    if (snapshot.state === "Cancelled") {
+      await this.chats.updateTaskStatus(current.chatId, "cancelled");
+      await this.clearRecoveryAlarmWhenIdle();
+      return { snapshot, spec: current.spec };
+    }
     return this.pump(snapshot.taskId);
+  }
+
+  async editAction(token: string, args: Record<string, unknown>): Promise<unknown> {
+    const current = await this.latestWithTaskId();
+    if (!current) throw new Error("There is no agent action awaiting review.");
+    const snapshot = await this.controller.editPendingAction(current.snapshot.taskId, token, args);
+    if (snapshot.state === "Cancelled") {
+      await this.chats.updateTaskStatus(current.chatId, "cancelled");
+      await this.clearRecoveryAlarmWhenIdle();
+    }
+    return { snapshot, spec: await this.tasks.getTaskSpec(snapshot.taskId) };
   }
 
   async provideClarification(answer: string): Promise<unknown> {
@@ -132,5 +149,13 @@ export class AgentRuntime implements AgentGateway {
     const snapshot = await this.tasks.getTaskSnapshot(chat.task.taskId);
     if (!snapshot) return null;
     return { chatId: entry.chatId, snapshot, spec: await this.tasks.getTaskSpec(chat.task.taskId) };
+  }
+
+  private async clearRecoveryAlarmWhenIdle(): Promise<void> {
+    for (const entry of await this.chats.getChatIndex()) {
+      const chat = await this.chats.getChat(entry.chatId);
+      if (chat?.task.status === "running") return;
+    }
+    await chrome.alarms.clear("atlas_task_recovery_heartbeat");
   }
 }

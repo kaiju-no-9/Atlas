@@ -12,7 +12,7 @@ export const TaskSnapshotSchema = z.object({
   stepCount: z.number().int().nonnegative(), activeTabId: z.number().int().nonnegative(),
   lastObservationId: z.string().uuid().optional(), lastObservationFingerprint: z.string().optional(),
   pendingToolEnvelope: ToolEnvelopeSchema.optional(),
-  pendingApproval: z.object({ approvalToken: z.string().uuid(), actionKey: z.string().max(5000), approved: z.boolean(), actionSummary: z.string().max(300), consequence: z.string().max(500), tier: z.number().int().min(2).max(3), expiresAt: z.number().int() }).strict().optional(),
+  pendingApproval: z.object({ approvalToken: z.string().uuid(), actionKey: z.string().max(5000), payloadDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(), approved: z.boolean(), actionSummary: z.string().max(300), consequence: z.string().max(500), tier: z.number().int().min(2).max(3), expiresAt: z.number().int(), tokenExpiresAt: z.number().int().optional() }).strict().optional(),
   budgetsUsed: z.object({ steps: z.number().int().nonnegative(), tokens: z.number().int().nonnegative(), estimatedCostUsd: z.number().nonnegative().default(0), startTime: z.number().int() }).strict(),
   recoveryAttemptsForCurrentStep: z.number().int().nonnegative(), consecutiveNoProgressSteps: z.number().int().nonnegative(),
   revision: z.number().int().nonnegative(), updatedAt: z.string().datetime(),

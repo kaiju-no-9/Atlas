@@ -3,6 +3,7 @@ import { ActionQueue } from "../browser/actionQueue.ts";
 import { ToolRegistry, ToolSchemas, type ToolName } from "./registry.ts";
 import { ToolEnvelopeSchema, type ToolEnvelope, type ToolResultEnvelope } from "./protocol.ts";
 import { PageObservationSchema } from "../perception/types.ts";
+import { PolicyEngine } from "../policy/engine.ts";
 
 export interface PipelineContext {
   taskId: string; tabId: number; currentUrl: string; taskStatus: "running" | "paused" | "cancelled" | "completed" | "failed";
@@ -17,6 +18,7 @@ export class ToolValidationPipeline {
   private readonly queue: ActionQueue;
   private readonly dispatch: ToolAdapter;
   private readonly verify?: OutcomeVerifier;
+  private readonly policy = new PolicyEngine();
   constructor(queue: ActionQueue, dispatch: ToolAdapter, verify?: OutcomeVerifier) { this.queue = queue; this.dispatch = dispatch; this.verify = verify; }
 
   async execute(raw: unknown, ctx: PipelineContext): Promise<ToolResultEnvelope> {
@@ -43,7 +45,12 @@ export class ToolValidationPipeline {
     if (typeof targetUrl === "string" && !this.isInScope(targetUrl, ctx.allowedOrigins)) return this.error("ORIGIN_OUT_OF_SCOPE", "The destination is outside the task's allowed origins.", env, start, "rejected_policy");
     const definition = ToolRegistry[tool];
     const approvalKey = actionKey(tool, args);
-    if (definition.riskTier >= 2 && !ctx.approvedActions.has(approvalKey)) return this.error("APPROVAL_REQUIRED", "This action requires user approval for these exact parameters.", env, start, "rejected_policy");
+    const targetId = typeof args === "object" && args !== null && "elementId" in args && typeof args.elementId === "string" ? args.elementId : undefined;
+    const activeObservation = ctx.activeObservation ? PageObservationSchema.parse(ctx.activeObservation) : undefined;
+    const target = targetId ? activeObservation?.elements.find((item) => item.id === targetId) : undefined;
+    const risk = this.policy.classifyActionRisk(env, ctx.currentUrl, ctx.allowedOrigins, target);
+    if (risk.blocked) return this.error("ACTION_BLOCKED_BY_POLICY", risk.consequence, env, start, "rejected_policy");
+    if (risk.tier >= 2 && !ctx.approvedActions.has(approvalKey)) return this.error("APPROVAL_REQUIRED", "This action requires user approval for these exact parameters.", env, start, "rejected_policy");
     try {
       const output = definition.mutatesPage
         ? await this.queue.enqueue(ctx.tabId, () => this.dispatch(ctx.tabId, tool, args, env))
