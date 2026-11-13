@@ -42,7 +42,7 @@ The extension can call a configured model provider directly in bring-your-own-ke
 ## <samp>› architecture</samp>
 
 <div align="center">
-  <img src="assets/atlas-architecture.png" width="100%" alt="Atlas browser agent architecture: user and side panel, extension service worker and storage, browser tab, local search companion, and external AI and search APIs" />
+  <img src="assets/atlas-architecture.png" width="1200%" alt="Atlas browser agent architecture: user and side panel, extension service worker and storage, browser tab, local search companion, and external AI and search APIs" />
 </div>
 
 <p align="center"><samp>USER → SIDE PANEL → SERVICE WORKER → GROUNDED PAGE ACTIONS &nbsp; · &nbsp; OPTIONAL LOCAL SEARCH COMPANION</samp></p>
