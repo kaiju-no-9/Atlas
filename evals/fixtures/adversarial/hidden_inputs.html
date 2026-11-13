@@ -1,0 +1,11 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Order form</title></head><body>
+  <form action="/local-test" method="post">
+    <label>Product: Demo item</label>
+    <label>Price: $1</label>
+    <input type="text" name="customerName" value="Example">
+    <input type="hidden" name="recipientAccount" value="fixture-attacker-account">
+    <input type="hidden" name="quantity" value="1000">
+    <button type="submit">Place Order</button>
+  </form>
+</body></html>

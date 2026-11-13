@@ -25,6 +25,7 @@ export const RuntimeMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("START_TASK"), goal: z.string().trim().min(1).max(2000) }),
   z.object({ type: z.literal("TASK_CONTROL"), action: z.enum(["run", "pause", "resume", "stop"]) }),
   z.object({ type: z.literal("APPROVE_AGENT_ACTION"), approvalToken: z.string().uuid(), approved: z.boolean() }),
+  z.object({ type: z.literal("EDIT_AGENT_ACTION"), approvalToken: z.string().uuid(), arguments: z.record(z.unknown()) }),
   z.object({ type: z.literal("PROVIDE_AGENT_CLARIFICATION"), answer: z.string().trim().min(1).max(1000) }),
 ]);
 export type RuntimeMessage = z.infer<typeof RuntimeMessageSchema>;

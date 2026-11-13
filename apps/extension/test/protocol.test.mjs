@@ -13,6 +13,8 @@ test("rejects empty and oversized task goals", () => {
 
 test("rejects task control actions outside the protocol", () => {
   assert.equal(RuntimeMessageSchema.safeParse({ type: "TASK_CONTROL", action: "delete" }).success, false);
+  assert.equal(RuntimeMessageSchema.safeParse({ type: "EDIT_AGENT_ACTION", approvalToken: "11111111-1111-4111-8111-111111111111", arguments: { elementId: "el_1" } }).success, true);
+  assert.equal(RuntimeMessageSchema.safeParse({ type: "EDIT_AGENT_ACTION", approvalToken: "bad", arguments: [] }).success, false);
 });
 
 test("bounds saved API keys and requires a non-empty model identifier", () => {
